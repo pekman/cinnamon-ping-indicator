@@ -1,0 +1,5 @@
+{
+    "uuid": "ping-indicator@pekman.github.io",
+    "name": "Ping indicator",
+    "description": "Display ping value in panel"
+}
