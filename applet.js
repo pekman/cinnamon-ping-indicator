@@ -84,7 +84,8 @@ class PingIndicatorApplet extends Applet.TextApplet {
 
     this.set_applet_label("N/A");
 
-    this.ping = null;
+    this._is_in_panel = false;
+    this._ping = null;
     this._stoppedPromise = Promise.resolve();
 
     this.settings = new Settings.AppletSettings(this, uuid, instance_id);
@@ -94,7 +95,7 @@ class PingIndicatorApplet extends Applet.TextApplet {
 
   async _async_update() {
     try {
-      for await (const val of this.ping)
+      for await (const val of this._ping)
         this.set_applet_label(val != null ? `${val} ms` : "N/A");
     }
     catch (err) {
@@ -105,17 +106,17 @@ class PingIndicatorApplet extends Applet.TextApplet {
 
   _start() {
     // idempotent function
-    if (this.ping == null) {
-      this.ping = ping(this.host, this.interval);
+    if (this._ping == null) {
+      this._ping = ping(this.host, this.interval);
       this.updater = this._async_update();
     }
   }
 
   async _stop() {
     // idempotent function
-    if (this.ping != null) {
-      const ping = this.ping;
-      this.ping = null;
+    if (this._ping != null) {
+      const ping = this._ping;
+      this._ping = null;
       try {
         this._stoppedPromise = ping.return();
         await this._stoppedPromise;
@@ -134,21 +135,25 @@ class PingIndicatorApplet extends Applet.TextApplet {
   }
 
   on_applet_added_to_panel() {
+    this._is_in_panel = true;
     this._start();
   }
 
   on_applet_removed_from_panel() {
+    this._is_in_panel = false;
     this._stop();
   }
 
   async on_settings_changed() {
-    if (this.ping != null) {
-      global.log("Settings changed. Restarting ping subprocess.");
-      await this._stop();
+    if (this._is_in_panel) {
+      if (this._ping != null) {
+        global.log("Settings changed. Restarting ping subprocess.");
+        await this._stop();
+      }
+      else {
+        global.log("Settings changed. ping not running. Starting it.");
+      }
       this._start();
-    }
-    else {
-      global.log("Settings changed. ping not running.");
     }
   }
 }
