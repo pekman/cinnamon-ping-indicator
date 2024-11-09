@@ -39,7 +39,7 @@ async function* ping(host, interval) {
     for (;;) {
       const [line, ] = await stdout.read_line_async(0, readCancellable);
       if (line == null) {
-        global.log("ping exited on its own. This shouldn't happen.");
+        global.log("ping exited on its own");
         return;
       }
 
