@@ -85,6 +85,7 @@ class PingIndicatorApplet extends Applet.TextApplet {
     this.set_applet_label("N/A");
 
     this.ping = null;
+    this._stoppedPromise = Promise.resolve();
 
     this.settings = new Settings.AppletSettings(this, uuid, instance_id);
     this.settings.bind("host", "host", this.on_settings_changed);
@@ -103,21 +104,32 @@ class PingIndicatorApplet extends Applet.TextApplet {
   }
 
   _start() {
-    if (this.ping != null) {
-      global.log(
-        "Applet added to panel twice. This shouldn't happen. Cleaning up.");
-      this._stop();
+    // idempotent function
+    if (this.ping == null) {
+      this.ping = ping(this.host, this.interval);
+      this.updater = this._async_update();
     }
-
-    this.ping = ping(this.host, this.interval);
-    this.updater = this._async_update();
   }
 
-  _stop() {
+  async _stop() {
+    // idempotent function
     if (this.ping != null) {
-      // async function; let it run in the background
-      this.ping.return().catch(global.logError);
+      const ping = this.ping;
       this.ping = null;
+      try {
+        this._stoppedPromise = ping.return();
+        await this._stoppedPromise;
+      }
+      catch (err) {
+        global.logError(err);
+        // TODO: Has the subprocess actually stopped or not? Maybe we should
+        //       just let the whole applet crash.
+      }
+    }
+    else {
+      // If stop has already been called, wait until it finishes.
+      // If already stopped or never started, this continues immediately.
+      await this._stoppedPromise;
     }
   }
 
@@ -129,9 +141,15 @@ class PingIndicatorApplet extends Applet.TextApplet {
     this._stop();
   }
 
-  on_settings_changed() {
-    this._stop();
-    this._start();
+  async on_settings_changed() {
+    if (this.ping != null) {
+      global.log("Settings changed. Restarting ping subprocess.");
+      await this._stop();
+      this._start();
+    }
+    else {
+      global.log("Settings changed. ping not running.");
+    }
   }
 }
 
