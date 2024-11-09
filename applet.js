@@ -3,6 +3,7 @@
 const Applet = imports.ui.applet;
 const Gio = imports.gi.Gio;
 const Mainloop = imports.mainloop;
+const Settings = imports.ui.settings;
 
 
 const SIGTERM = 15;  // as defined by POSIX
@@ -78,12 +79,16 @@ async function* ping(host, interval) {
 
 
 class PingIndicatorApplet extends Applet.TextApplet {
-  constructor(...args) {
-    super(...args);
+  constructor(uuid, orientation, panel_height, instance_id) {
+    super(orientation, panel_height, instance_id);
 
     this.set_applet_label("N/A");
 
     this.ping = null;
+
+    this.settings = new Settings.AppletSettings(this, uuid, instance_id);
+    this.settings.bind("host", "host", this.on_settings_changed);
+    this.settings.bind("interval", "interval", this.on_settings_changed);
   }
 
   async _async_update() {
@@ -97,27 +102,41 @@ class PingIndicatorApplet extends Applet.TextApplet {
     global.log("update loop stopped");
   }
 
-  on_applet_added_to_panel() {
+  _start() {
     if (this.ping != null) {
       global.log(
         "Applet added to panel twice. This shouldn't happen. Cleaning up.");
-      this.on_applet_removed_from_panel();
+      this._stop();
     }
 
-    this.ping = ping("1.1.1.1", 5);
+    this.ping = ping(this.host, this.interval);
     this.updater = this._async_update();
   }
 
-  on_applet_removed_from_panel() {
+  _stop() {
     if (this.ping != null) {
       // async function; let it run in the background
       this.ping.return().catch(global.logError);
       this.ping = null;
     }
   }
+
+  on_applet_added_to_panel() {
+    this._start();
+  }
+
+  on_applet_removed_from_panel() {
+    this._stop();
+  }
+
+  on_settings_changed() {
+    this._stop();
+    this._start();
+  }
 }
 
 
 function main(metadata, orientation, panel_height, instance_id) {
-  return new PingIndicatorApplet(orientation, panel_height, instance_id);
+  return new PingIndicatorApplet(
+    metadata.uuid, orientation, panel_height, instance_id);
 }
