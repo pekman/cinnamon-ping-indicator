@@ -1,4 +1,9 @@
 {
+    "title": {
+        "type": "entry",
+        "default": "",
+        "description": "Title (optional)"
+    },
     "host": {
         "type": "entry",
         "default": "1.1.1.1",

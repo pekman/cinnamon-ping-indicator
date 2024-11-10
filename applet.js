@@ -82,21 +82,29 @@ class PingIndicatorApplet extends Applet.TextApplet {
   constructor(uuid, orientation, panel_height, instance_id) {
     super(orientation, panel_height, instance_id);
 
-    this.set_applet_label("N/A");
-
     this._is_in_panel = false;
     this._ping = null;
     this._stoppedPromise = Promise.resolve();
 
     this.settings = new Settings.AppletSettings(this, uuid, instance_id);
+    this.settings.bind("title", "title", this.on_settings_changed);
     this.settings.bind("host", "host", this.on_settings_changed);
     this.settings.bind("interval", "interval", this.on_settings_changed);
+
+    this.set_applet_tooltip(this.host ?? "");
+    this._set_ping_val(null);
+  }
+
+  _set_ping_val(val) {
+    this.set_applet_label(
+      (this.title ? `${this.title} ` : "") +
+      (val != null ? `${val} ms` : "N/A"));
   }
 
   async _async_update() {
     try {
       for await (const val of this._ping)
-        this.set_applet_label(val != null ? `${val} ms` : "N/A");
+        this._set_ping_val(val);
     }
     catch (err) {
       global.logError(err);
@@ -145,6 +153,8 @@ class PingIndicatorApplet extends Applet.TextApplet {
   }
 
   async on_settings_changed() {
+    this.set_applet_tooltip(this.host ?? "");
+
     if (this._is_in_panel) {
       if (this._ping != null) {
         global.log("Settings changed. Restarting ping subprocess.");

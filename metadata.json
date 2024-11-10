@@ -1,5 +1,6 @@
 {
     "uuid": "ping-indicator@pekman.github.io",
     "name": "Ping indicator",
-    "description": "Display ping value in panel"
+    "description": "Display ping value in panel",
+    "max-instances": -1
 }
