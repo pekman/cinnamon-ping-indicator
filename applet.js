@@ -9,6 +9,7 @@ const Settings = imports.ui.settings;
 const SIGTERM = 15;  // as defined by POSIX
 
 const SIGTERM_TIMEOUT = 5000;  // in ms
+const SIGKILL_TIMEOUT = 5000;  // in ms
 
 
 Gio._promisify(Gio.DataInputStream.prototype,
@@ -16,6 +17,20 @@ Gio._promisify(Gio.DataInputStream.prototype,
 Gio._promisify(Gio.DataInputStream.prototype, "close_async", "close_finish");
 Gio._promisify(Gio.Subprocess.prototype, "wait_async", "wait_finish");
 
+
+async function _wait_proc_with_timeout(proc, timeout) {
+  const timeoutCancellable = new Gio.Cancellable();
+  const timeoutId = Mainloop.timeout_add(timeout, () => {
+    timeoutCancellable.cancel();
+    return false;  // don't run again
+  });
+  try {
+    return await proc.wait_async(timeoutCancellable);
+  }
+  finally {
+    Mainloop.source_remove(timeoutId);
+  }
+}
 
 /**
  * ping:
@@ -38,10 +53,8 @@ async function* ping(host, interval) {
   try {
     for (;;) {
       const [line, ] = await stdout.read_line_async(0, readCancellable);
-      if (line == null) {
-        global.log("ping exited on its own");
+      if (line == null)  // stdout closed, ping exited on its own
         return;
-      }
 
       global.log(`line: ${line}`);
       const m = /\btime=(\d+(?:\.\d+))\s*ms\b/.exec(line);
@@ -52,28 +65,29 @@ async function* ping(host, interval) {
     readCancellable.cancel();
     await stdout.close_async(0, null);
 
-    global.log(
-      `Terminating ping with SIGTERM (pid=${proc.get_identifier()})...`);
-    proc.send_signal(SIGTERM);
+    const pid = proc.get_identifier();
+    let terminated = pid == null;
 
-    const timeoutCancellable = new Gio.Cancellable();
-    const timeoutId = Mainloop.timeout_add(SIGTERM_TIMEOUT, () => {
-      timeoutCancellable.cancel();
-      return false;  // don't run again
-    });
-    const terminated = await proc.wait_async(timeoutCancellable);
-    Mainloop.source_remove(timeoutId);
-
-    if (!terminated) {
-      global.log(
-        `ping (pid=${proc.get_identifier()}) not terminated. Killing it...`);
-      proc.force_exit();
-      if (! await proc.wait_async(new Gio.Cancellable())) {
-        global.log("error killing ping subprocess");
-        return;
-      }
+    if (terminated) {
+      global.log("ping exited on its own");
+      await proc.wait_async(null);
     }
-    global.log("ping subprocess terminated");
+    else {
+      global.log(`Terminating ping with SIGTERM (pid=${pid})…`);
+      proc.send_signal(SIGTERM);
+
+      terminated = await _wait_proc_with_timeout(proc, SIGTERM_TIMEOUT);
+      if (!terminated) {
+        global.log(`ping (pid=${pid}) not terminated. Killing it…`);
+        proc.force_exit();
+        terminated = await _wait_proc_with_timeout(proc, SIGKILL_TIMEOUT);
+      }
+
+      if (terminated)
+        global.log("ping subprocess terminated");
+      else
+        global.log("Error killing ping subprocess");
+    }
   }
 }
 
